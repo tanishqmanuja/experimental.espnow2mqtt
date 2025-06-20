@@ -1,13 +1,16 @@
 import asyncio
 from dataclasses import dataclass
+import json
 
 from aiomqtt import Client
 from aioserial import AioSerial, SerialException
 
 from mqtt_handlers.wizmote import handle_wizmote_message
+from serial_handlers.discovery import handle_discovery_message
+from serial_handlers.update import handle_update_message
 from utils.device import parse_packet
 
-ESPNOW_MQTT_TOPIC = "espnow/#"
+ESPNOW_MQTT_TOPIC = "espnow/+/send"
 
 
 @dataclass
@@ -73,8 +76,18 @@ class Gateway:
                         if not packet:
                             break
                         print("[SERIAL]", packet)
-                        # Optionally publish to MQTT here
-                        # await self.publish_mqtt(packet)
+                        try:
+                            data = json.loads(packet.data.decode("utf-8"))
+                            if data.get("type") == "discovery":
+                                await handle_discovery_message(
+                                    self.serial, self.mqtt, packet
+                                )
+                            else:
+                                await handle_update_message(
+                                    self.serial, self.mqtt, packet
+                                )
+                        except Exception as e:
+                            print("⚠️ Error handling message:", e)
 
                 except Exception as e:
                     print(f"[❌] Serial read error: {e}")
@@ -104,6 +117,7 @@ class Gateway:
                     except Exception as e:
                         print(f"[MQTT] Handler Failed: {e}")
                 else:
+                    pass
                     print(
                         f"[MQTT] Unhandled topic {message.topic.value}: {message.payload}"
                     )
